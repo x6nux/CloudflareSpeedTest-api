@@ -1,9 +1,9 @@
 package main
 
 import (
-	"edulx/download/cfip"
-	"edulx/download/task"
-	"edulx/download/utils"
+	"github.com/v50-one/CloudflareSpeedTest-api/cfip"
+	"github.com/v50-one/CloudflareSpeedTest-api/task"
+	"github.com/v50-one/CloudflareSpeedTest-api/utils"
 	"flag"
 	"fmt"
 	"io"
