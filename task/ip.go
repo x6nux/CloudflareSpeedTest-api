@@ -82,7 +82,7 @@ func (r *IPRanges) appendIP(ip net.IP) {
 // 返回第四段 ip 的最小值及可用数目
 func (r *IPRanges) getIPRange() (minIP, hosts byte) {
 	minIP = r.firstIP[15] & r.ipNet.Mask[3] // IP 第四段最小值
-
+	
 	// 根据子网掩码获取主机数量
 	m := net.IPv4Mask(255, 255, 255, 255)
 	for i, v := range r.ipNet.Mask {
