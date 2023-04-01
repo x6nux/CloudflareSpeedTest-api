@@ -2,6 +2,7 @@ package cfip
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io"
@@ -21,19 +22,24 @@ type CloudflareAPI struct {
 var C CloudflareAPI
 
 // ReadYaml 读取yaml文件
-func (c *CloudflareAPI) ReadYaml() {
+func (c *CloudflareAPI) ReadYaml() error {
 	//读取yaml文件
 	yamlFile, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
-		fmt.Println(err.Error())
+		return err
 	}
 	err = yaml.Unmarshal(yamlFile, &C)
 	if err != nil {
-		fmt.Println(err.Error())
+		return err
 	}
+	if C.Email == "" || C.ApiKeys == "" || C.ZoneId == "" || C.Domain == "" || len(C.SubDomain) == 0 {
+		fmt.Println("请检查config.yaml配置文件是否正确")
+		return errors.New("请检查config.yaml配置文件是否正确")
+	}
+	return nil
 }
 
-// 调用cloudfare的api查询对应的域名
+// GetDomain 调用cloudflare的api查询对应的域名
 func (c *CloudflareAPI) GetDomain() CFR {
 	url := "https://api.cloudflare.com/client/v4/zones/" + c.ZoneId + "/dns_records?page=1&per_page=20&order=type&direction=asc"
 	client := &http.Client{}
@@ -70,7 +76,7 @@ func (c *CloudflareAPI) GetDomain() CFR {
 	return s
 }
 
-// 筛选出对应的域名
+// GetDomainUuid 筛选出对应的域名
 func (c *CloudflareAPI) GetDomainUuid() map[string]string {
 	s := c.GetDomain()
 	mp := make(map[string]string)
@@ -80,7 +86,7 @@ func (c *CloudflareAPI) GetDomainUuid() map[string]string {
 	return mp
 }
 
-// 根据速度对ip进行排序从大到小
+// SortIp 根据速度对ip进行排序从大到小
 func (c *CloudflareAPI) SortIp(ip []string, speed []float64) []string {
 	for i := 0; i < len(speed); i++ {
 		for j := i + 1; j < len(speed); j++ {
@@ -93,16 +99,23 @@ func (c *CloudflareAPI) SortIp(ip []string, speed []float64) []string {
 	return ip
 }
 
-// 更新域名
+// UpdateDomain 更新域名
 func (c *CloudflareAPI) UpdateDomain(ip []string, speed []float64) {
 	if len(ip) < len(c.SubDomain) {
 		fmt.Println("ip地址和域名数量不匹配")
 		return
 	}
-	c.ReadYaml()
+	err := c.ReadYaml()
+	if err != nil {
+		return
+	}
 	s := c.GetDomainUuid()
 	ip = c.SortIp(ip, speed)
 	for i, v := range c.SubDomain {
+		if s[v] == "" {
+			fmt.Println("域名:" + v + "." + c.Domain + "不存在")
+			continue
+		}
 		url := "https://api.cloudflare.com/client/v4/zones/" + c.ZoneId + "/dns_records/" + s[v]
 		method := "PUT"
 		payload := strings.NewReader(`{"type":"A","name":"` + v + `.` + c.Domain + `","content":"` + ip[i] + `","ttl":60,"proxied":false}`)
@@ -118,12 +131,6 @@ func (c *CloudflareAPI) UpdateDomain(ip []string, speed []float64) {
 		if err != nil {
 			fmt.Println(err.Error())
 		}
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-
-			}
-		}(res.Body)
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
 			fmt.Println(err.Error())
@@ -137,6 +144,11 @@ func (c *CloudflareAPI) UpdateDomain(ip []string, speed []float64) {
 			fmt.Println("域名:" + v + "." + c.Domain + "更新失败 IP:" + ip[i])
 		} else {
 			fmt.Println("域名:" + v + "." + c.Domain + "更新成功 IP:" + ip[i])
+		}
+		err = res.Body.Close()
+		if err != nil {
+			fmt.Println(err.Error())
+			return
 		}
 	}
 }
