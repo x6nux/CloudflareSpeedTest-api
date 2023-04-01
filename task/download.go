@@ -2,7 +2,7 @@ package task
 
 import (
 	"context"
-	"github.com/v50-one/CloudflareSpeedTest-api/utils"
+	"edulx/download/utils"
 	"fmt"
 	"github.com/VividCortex/ewma"
 	"io"
@@ -26,10 +26,11 @@ var (
 	URL     = defaultURL
 	Timeout = defaultTimeout
 	Disable = defaultDisableDownload
-	
+
 	TestCount = defaultTestNum
 	MinSpeed  = defaultMinSpeed
-	BEST_IP   []string
+	BestIp    []string
+	SpeedIp   []float64
 )
 
 func checkDownloadDefault() {
@@ -63,7 +64,7 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 	if testNum < TestCount {
 		TestCount = testNum
 	}
-	
+
 	fmt.Printf("开始下载测速（下载速度下限：%.2f MB/s，下载测速数量：%d，下载测速队列：%d）：\n", MinSpeed, TestCount, testNum)
 	// 控制 下载测速进度条 与 延迟测速进度条 长度一致（强迫症）
 	bar_a := len(strconv.Itoa(len(ipSet)))
@@ -78,9 +79,10 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
 		if speed >= MinSpeed*1024*1024 {
 			bar.Grow(1, "")
-			speedSet = append(speedSet, ipSet[i])           // 高于下载速度下限时，添加到新数组中
-			BEST_IP = append(BEST_IP, ipSet[i].IP.String()) //将下载速度最快的IP地址添加到BEST_IP数组中
-			if len(speedSet) == TestCount {                 // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
+			speedSet = append(speedSet, ipSet[i])         // 高于下载速度下限时，添加到新数组中
+			BestIp = append(BestIp, ipSet[i].IP.String()) //将下载速度最快的IP地址添加到BEST_IP数组中
+			SpeedIp = append(SpeedIp, speed)              //将下载速度最快的IP地址的下载速度添加到SPEED_IP数组中
+			if len(speedSet) == TestCount {               // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
 				break
 			}
 		}
@@ -125,9 +127,9 @@ func downloadHandler(ip *net.IPAddr) float64 {
 	if err != nil {
 		return 0.0
 	}
-	
+
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
-	
+
 	response, err := client.Do(req)
 	if err != nil {
 		return 0.0
@@ -138,20 +140,20 @@ func downloadHandler(ip *net.IPAddr) float64 {
 	}
 	timeStart := time.Now()           // 开始时间（当前）
 	timeEnd := timeStart.Add(Timeout) // 加上下载测速时间得到的结束时间
-	
+
 	contentLength := response.ContentLength // 文件大小
 	buffer := make([]byte, bufferSize)
-	
+
 	var (
 		contentRead     int64 = 0
 		timeSlice             = Timeout / 100
 		timeCounter           = 1
 		lastContentRead int64 = 0
 	)
-	
+
 	var nextTime = timeStart.Add(timeSlice * time.Duration(timeCounter))
 	e := ewma.NewMovingAverage()
-	
+
 	// 循环计算，如果文件下载完了（两者相等），则退出循环（终止测速）
 	for contentLength != contentRead {
 		currentTime := time.Now()

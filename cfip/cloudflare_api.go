@@ -80,14 +80,28 @@ func (c *CloudflareAPI) GetDomainUuid() map[string]string {
 	return mp
 }
 
+// 根据速度对ip进行排序从大到小
+func (c *CloudflareAPI) SortIp(ip []string, speed []float64) []string {
+	for i := 0; i < len(speed); i++ {
+		for j := i + 1; j < len(speed); j++ {
+			if speed[i] < speed[j] {
+				speed[i], speed[j] = speed[j], speed[i]
+				ip[i], ip[j] = ip[j], ip[i]
+			}
+		}
+	}
+	return ip
+}
+
 // 更新域名
-func (c *CloudflareAPI) UpdateDomain(ip []string) {
+func (c *CloudflareAPI) UpdateDomain(ip []string, speed []float64) {
 	if len(ip) < len(c.SubDomain) {
 		fmt.Println("ip地址和域名数量不匹配")
 		return
 	}
 	c.ReadYaml()
 	s := c.GetDomainUuid()
+	ip = c.SortIp(ip, speed)
 	for i, v := range c.SubDomain {
 		url := "https://api.cloudflare.com/client/v4/zones/" + c.ZoneId + "/dns_records/" + s[v]
 		method := "PUT"
@@ -120,9 +134,9 @@ func (c *CloudflareAPI) UpdateDomain(ip []string) {
 			fmt.Println(err.Error())
 		}
 		if s["success"] == false {
-			fmt.Println("域名:" + v + c.Domain + "更新失败 IP:" + ip[i])
+			fmt.Println("域名:" + v + "." + c.Domain + "更新失败 IP:" + ip[i])
 		} else {
-			fmt.Println("域名:" + v + c.Domain + "更新成功 IP:" + ip[i])
+			fmt.Println("域名:" + v + "." + c.Domain + "更新成功 IP:" + ip[i])
 		}
 	}
 }
