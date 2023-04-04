@@ -1,22 +1,29 @@
 package cfip
 
 import (
+	"crypto/tls"
+	"edulx/CloudflareSpeedTest-api/task"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type CloudflareAPI struct {
-	Email     string   `yaml:"email"`
-	ApiKeys   string   `yaml:"api_key"`
-	ZoneId    string   `yaml:"zone_id"`
-	Domain    string   `yaml:"domain"`
-	SubDomain []string `yaml:"subdomains"`
+	Clock       int      `yaml:"clock"`
+	ClockSwitch bool     `yaml:"clock_switch"`
+	Email       string   `yaml:"email"`
+	ApiKeys     string   `yaml:"api_key"`
+	ZoneId      string   `yaml:"zone_id"`
+	Domain      string   `yaml:"domain"`
+	SubDomain   []string `yaml:"subdomains"`
 }
 
 var C CloudflareAPI
@@ -40,21 +47,28 @@ func (c *CloudflareAPI) ReadYaml() error {
 }
 
 // GetDomain 调用cloudflare的api查询对应的域名
-func (c *CloudflareAPI) GetDomain() CFR {
+func (c *CloudflareAPI) GetDomain(ip net.IPAddr) (CFR, error) {
 	url := "https://api.cloudflare.com/client/v4/zones/" + c.ZoneId + "/dns_records?page=1&per_page=20&order=type&direction=asc"
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: time.Second * 30,
+		Transport: &http.Transport{
+			DialContext:     task.GetDialContext(&ip),
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 跳过证书验证
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 阻止重定向
+		},
+	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		fmt.Println(err.Error())
-		return CFR{}
+		return CFR{}, err
 	}
 	req.Header.Add("X-Auth-Email", c.Email)
 	req.Header.Add("X-Auth-Key", c.ApiKeys)
 	req.Header.Add("Content-Type", "application/json")
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err.Error())
-		return CFR{}
+		return CFR{}, err
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
@@ -64,30 +78,38 @@ func (c *CloudflareAPI) GetDomain() CFR {
 	}(res.Body)
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err.Error())
-		return CFR{}
+		return CFR{}, err
 	}
 	var s CFR
 	err = json.Unmarshal(body, &s)
+	if s.Success == false {
+		return CFR{}, err
+	}
 	if err != nil {
 		fmt.Println(err.Error())
-		return CFR{}
+		return CFR{}, err
 	}
-	return s
+	return s, nil
 }
 
 // GetDomainUuid 筛选出对应的域名
-func (c *CloudflareAPI) GetDomainUuid() map[string]string {
-	s := c.GetDomain()
+func (c *CloudflareAPI) GetDomainUuid(ip net.IPAddr) (map[string]string, error) {
+	s, err := c.GetDomain(ip)
+	if err != nil {
+		return nil, err
+	}
+	if s.Success == false || s.Errors == nil {
+		return nil, err
+	}
 	mp := make(map[string]string)
 	for _, v := range s.Result {
 		mp[strings.Split(v.Name, ".")[0]] = v.Id
 	}
-	return mp
+	return mp, nil
 }
 
 // SortIp 根据速度对ip进行排序从大到小
-func (c *CloudflareAPI) SortIp(ip []string, speed []float64) []string {
+func (c *CloudflareAPI) SortIp(ip []net.IPAddr, speed []float64) []net.IPAddr {
 	for i := 0; i < len(speed); i++ {
 		for j := i + 1; j < len(speed); j++ {
 			if speed[i] < speed[j] {
@@ -100,7 +122,7 @@ func (c *CloudflareAPI) SortIp(ip []string, speed []float64) []string {
 }
 
 // UpdateDomain 更新域名
-func (c *CloudflareAPI) UpdateDomain(ip []string, speed []float64) {
+func (c *CloudflareAPI) UpdateDomain(ip []net.IPAddr, speed []float64) {
 	if len(ip) < len(c.SubDomain) {
 		fmt.Println("ip地址和域名数量不匹配")
 		return
@@ -109,46 +131,148 @@ func (c *CloudflareAPI) UpdateDomain(ip []string, speed []float64) {
 	if err != nil {
 		return
 	}
-	s := c.GetDomainUuid()
-	ip = c.SortIp(ip, speed)
-	for i, v := range c.SubDomain {
-		if s[v] == "" {
-			fmt.Println("域名:" + v + "." + c.Domain + "不存在")
-			continue
-		}
-		url := "https://api.cloudflare.com/client/v4/zones/" + c.ZoneId + "/dns_records/" + s[v]
-		method := "PUT"
-		payload := strings.NewReader(`{"type":"A","name":"` + v + `.` + c.Domain + `","content":"` + ip[i] + `","ttl":60,"proxied":false}`)
-		client := &http.Client{}
-		req, err := http.NewRequest(method, url, payload)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-		req.Header.Add("X-Auth-Email", c.Email)
-		req.Header.Add("X-Auth-Key", c.ApiKeys)
-		req.Header.Add("Content-Type", "application/json")
-		res, err := client.Do(req)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-		var s map[string]interface{}
-		err = json.Unmarshal(body, &s)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-		if s["success"] == false {
-			fmt.Println("域名:" + v + "." + c.Domain + "更新失败 IP:" + ip[i])
-		} else {
-			fmt.Println("域名:" + v + "." + c.Domain + "更新成功 IP:" + ip[i])
-		}
-		err = res.Body.Close()
-		if err != nil {
-			fmt.Println(err.Error())
+	var s map[string]string
+	for i := 0; i <= len(ip); i++ {
+		if i == len(ip) {
+			fmt.Println("域名信息获取失败,结束重试")
 			return
 		}
+		s, err = c.GetDomainUuid(ip[i])
+		if err == nil {
+			break
+		}
+		fmt.Println("域名信息第" + strconv.Itoa(i+1) + "次获取失败,正在进行下一次重试")
 	}
+
+	ip = c.SortIp(ip, speed)
+	for i, v := range c.SubDomain {
+		if i >= len(ip) {
+			break
+		}
+		if s[v] == "" {
+			fmt.Println("域名:" + v + "." + c.Domain + "不存在")
+			for k := 0; k <= len(ip); k++ {
+				if k == len(ip) {
+					fmt.Println("域名" + v + "." + c.Domain + "创建失败 IP:" + ip[i].String())
+				}
+				err := c.CreateDomain(v, ip[i], ip[k])
+				if err == nil {
+					fmt.Println("域名" + v + "." + c.Domain + "创建成功 IP:" + ip[k].String())
+					break
+				}
+				fmt.Println("域名" + v + "." + c.Domain + "第" + strconv.Itoa(k+1) + "次创建失败,正在进行下一次重试")
+			}
+
+			continue
+		}
+		for t := 0; t <= len(ip); i++ {
+			if t == len(ip) {
+				fmt.Println("域名" + v + "." + c.Domain + "更新失败 IP:" + ip[i].String())
+			}
+			err := c.PUTDomains(ip[i], v, ip[t], s[v])
+			if err == nil {
+				fmt.Println("域名" + v + "." + c.Domain + "更新成功 IP:" + ip[i].String())
+				break
+			}
+			fmt.Println("域名" + v + "." + c.Domain + "第" + strconv.Itoa(t+1) + "次更新失败,正在进行下一次重试")
+		}
+	}
+}
+func (c *CloudflareAPI) PUTDomains(ip net.IPAddr, subdomain string, ips net.IPAddr, domainid string) error {
+	url := "https://api.cloudflare.com/client/v4/zones/" + c.ZoneId + "/dns_records/" + domainid
+	method := "PUT"
+	payload := strings.NewReader(`{"type":"A","name":"` + subdomain + `.` + c.Domain + `","content":"` + ip.String() + `","ttl":60,"proxied":false}`)
+	client := &http.Client{
+		Timeout: time.Second * 30,
+		Transport: &http.Transport{
+			DialContext:     task.GetDialContext(&ips),
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 跳过证书验证
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 阻止重定向
+		},
+	}
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	req.Header.Add("X-Auth-Email", c.Email)
+	req.Header.Add("X-Auth-Key", c.ApiKeys)
+	req.Header.Add("Content-Type", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	body, err := io.ReadAll(res.Body)
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(res.Body)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	var s map[string]interface{}
+	err = json.Unmarshal(body, &s)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	if s["success"] == false {
+		return errors.New("更新失败")
+	} else {
+		return nil
+	}
+}
+
+// CreateDomain 创建域名解析
+func (c *CloudflareAPI) CreateDomain(subdomain string, ip net.IPAddr, ips net.IPAddr) error {
+	err := c.ReadYaml()
+	if err != nil {
+		return err
+	}
+	url := "https://api.cloudflare.com/client/v4/zones/" + c.ZoneId + "/dns_records"
+	method := "POST"
+	payload := strings.NewReader(`{"type":"A","name":"` + subdomain + `.` + c.Domain + `","content":"` + ip.String() + `","ttl":60,"proxied":false}`)
+	client := &http.Client{
+		Timeout: time.Second * 30,
+		Transport: &http.Transport{
+			DialContext:     task.GetDialContext(&ips),
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 跳过证书验证
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 阻止重定向
+		}}
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("X-Auth-Email", c.Email)
+	req.Header.Add("X-Auth-Key", c.ApiKeys)
+	req.Header.Add("Content-Type", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	body, err := io.ReadAll(res.Body)
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(res.Body)
+	if err != nil {
+		return err
+	}
+	var s map[string]interface{}
+	err = json.Unmarshal(body, &s)
+	if err != nil {
+		return err
+	}
+	if s["success"] == false {
+		return errors.New("创建失败")
+	} else {
+		return nil
+	}
+
 }

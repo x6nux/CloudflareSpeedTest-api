@@ -2,7 +2,7 @@ package task
 
 import (
 	"context"
-	"edulx/download/utils"
+	"edulx/CloudflareSpeedTest-api/utils"
 	"fmt"
 	"github.com/VividCortex/ewma"
 	"io"
@@ -29,7 +29,7 @@ var (
 
 	TestCount = defaultTestNum
 	MinSpeed  = defaultMinSpeed
-	BestIp    []string
+	BestIp    []net.IPAddr
 	SpeedIp   []float64
 )
 
@@ -79,10 +79,10 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 		// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
 		if speed >= MinSpeed*1024*1024 {
 			bar.Grow(1, "")
-			speedSet = append(speedSet, ipSet[i])         // 高于下载速度下限时，添加到新数组中
-			BestIp = append(BestIp, ipSet[i].IP.String()) //将下载速度最快的IP地址添加到BEST_IP数组中
-			SpeedIp = append(SpeedIp, speed)              //将下载速度最快的IP地址的下载速度添加到SPEED_IP数组中
-			if len(speedSet) == TestCount {               // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
+			speedSet = append(speedSet, ipSet[i]) // 高于下载速度下限时，添加到新数组中
+			BestIp = append(BestIp, *ipSet[i].IP) //将下载速度最快的IP地址添加到BEST_IP数组中
+			SpeedIp = append(SpeedIp, speed)      //将下载速度最快的IP地址的下载速度添加到SPEED_IP数组中
+			if len(speedSet) == TestCount {       // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
 				break
 			}
 		}
@@ -96,7 +96,7 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 	return
 }
 
-func getDialContext(ip *net.IPAddr) func(ctx context.Context, network, address string) (net.Conn, error) {
+func GetDialContext(ip *net.IPAddr) func(ctx context.Context, network, address string) (net.Conn, error) {
 	var fakeSourceAddr string
 	if isIPv4(ip.String()) {
 		fakeSourceAddr = fmt.Sprintf("%s:%d", ip.String(), TCPPort)
@@ -111,7 +111,7 @@ func getDialContext(ip *net.IPAddr) func(ctx context.Context, network, address s
 // return download Speed
 func downloadHandler(ip *net.IPAddr) float64 {
 	client := &http.Client{
-		Transport: &http.Transport{DialContext: getDialContext(ip)},
+		Transport: &http.Transport{DialContext: GetDialContext(ip)},
 		Timeout:   Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > 10 { // 限制最多重定向 10 次

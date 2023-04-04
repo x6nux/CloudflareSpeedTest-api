@@ -1,7 +1,16 @@
-email : a@qq.com
-api_key : d
-zone_id : 9
-domain: a.com
+#定时器，单位秒
+clock : 10
+#是否开启定时器 true开启 false关闭
+clock_switch : false
+#Cloudflare账号邮箱
+email : a@a.com
+#Cloudflare全局API Key
+api_key : d97
+#Cloudflare域名ID
+zone_id : 9cc
+#域名
+domain: 1.xyz
+#子域名
 subdomains:
   - cf1
   - cf2

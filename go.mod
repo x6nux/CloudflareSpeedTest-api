@@ -1,4 +1,4 @@
-module edulx/download
+module edulx/CloudflareSpeedTest-api
 
 go 1.19
 

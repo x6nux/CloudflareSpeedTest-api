@@ -1,9 +1,9 @@
 package main
 
 import (
-	"edulx/download/cfip"
-	"edulx/download/task"
-	"edulx/download/utils"
+	"edulx/CloudflareSpeedTest-api/cfip"
+	"edulx/CloudflareSpeedTest-api/task"
+	"edulx/CloudflareSpeedTest-api/utils"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +20,7 @@ var (
 
 func init() {
 	var printVersion bool
+
 	var help = `
 CloudflareSpeedTest ` + version + `
 测试 Cloudflare CDN 所有 IP 的延迟和速度，获取最快 IP (IPv4+IPv6)！
@@ -87,7 +88,6 @@ https://github.com/XIU2/CloudflareSpeedTest
 	flag.IntVar(&maxDelay, "tl", 9999, "平均延迟上限")
 	flag.IntVar(&minDelay, "tll", 0, "平均延迟下限")
 	flag.Float64Var(&task.MinSpeed, "sl", 0, "下载速度下限")
-
 	flag.IntVar(&utils.PrintNum, "p", 10, "显示结果数量")
 	flag.StringVar(&task.IPFile, "f", "ip.txt", "IP段数据文件")
 	flag.StringVar(&task.IPText, "ip", "", "指定IP段数据")
@@ -122,21 +122,24 @@ https://github.com/XIU2/CloudflareSpeedTest
 }
 
 func main() {
-	task.InitRandSeed() // 置随机数种子
-
-	fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
-	// 开始延迟测速
-	pingData := task.NewPing().Run().FilterDelay()
-	// 开始下载测速
-	speedData := task.TestDownloadSpeed(pingData)
-	utils.ExportCsv(speedData) // 输出文件
-	speedData.Print()          // 打印结果
-
-	if versionNew != "" {
-		fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
+	err := cfip.C.ReadYaml()
+	if err != nil {
+		fmt.Println("配置文件读取失败,请检查配置文件是否存在或者配置文件是否正确")
+		return
 	}
-	cfip.C.UpdateDomain(task.BestIp, task.SpeedIp) // 更新域名解析记录
-	endPrint()
+	if cfip.C.ClockSwitch == true {
+		if cfip.C.Clock > 0 {
+			fmt.Println("已开启定时任务,任务间隔为", float64(cfip.C.Clock)/60, "分钟")
+			timer()
+		} else {
+			fmt.Println("间隔不符合规范,请重新设置")
+		}
+
+	} else {
+		Run()
+		endPrint()
+	}
+
 }
 
 func endPrint() {
@@ -174,5 +177,35 @@ func checkUpdate() {
 	}(res.Body)
 	if string(body) != version {
 		versionNew = string(body)
+	}
+}
+
+func Run() {
+	task.InitRandSeed() // 置随机数种子
+
+	fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
+	fmt.Println("来自v50-one的修改版，感谢原作者")
+	// 开始延迟测速
+	pingData := task.NewPing().Run().FilterDelay()
+	// 开始下载测速
+	speedData := task.TestDownloadSpeed(pingData)
+	utils.ExportCsv(speedData) // 输出文件
+	speedData.Print()          // 打印结果
+
+	if versionNew != "" {
+		fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
+	}
+	cfip.C.UpdateDomain(task.BestIp, task.SpeedIp) // 更新域名解析记录
+
+}
+
+// 定时函数
+func timer() {
+	for {
+		Run()
+		duration := time.Duration(cfip.C.Clock)
+		fmt.Println("下次执行时间：", time.Now().Add(time.Second*duration).Format("2006-01-02 15:04:05"))
+		time.Sleep(time.Second * duration)
+		//等待执行
 	}
 }
