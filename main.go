@@ -2,6 +2,7 @@ package main
 
 import (
 	"edulx/CloudflareSpeedTest-api/cfip"
+	_const "edulx/CloudflareSpeedTest-api/const"
 	"edulx/CloudflareSpeedTest-api/task"
 	"edulx/CloudflareSpeedTest-api/utils"
 	"flag"
@@ -20,7 +21,7 @@ var (
 
 func init() {
 	var printVersion bool
-
+	
 	var help = `
 CloudflareSpeedTest ` + version + `
 测试 Cloudflare CDN 所有 IP 的延迟和速度，获取最快 IP (IPv4+IPv6)！
@@ -80,26 +81,26 @@ https://github.com/XIU2/CloudflareSpeedTest
 	flag.IntVar(&downloadTime, "dt", 10, "下载测速时间")
 	flag.IntVar(&task.TCPPort, "tp", 443, "指定测速端口")
 	flag.StringVar(&task.URL, "url", "https://cf.xiu2.xyz/url", "指定测速地址")
-
+	
 	flag.BoolVar(&task.Httping, "httping", false, "切换测速模式")
 	flag.IntVar(&task.HttpingStatusCode, "httping-code", 0, "有效状态代码")
 	flag.StringVar(&task.HttpingCFColo, "cfcolo", "", "匹配指定地区")
-
-	flag.IntVar(&maxDelay, "tl", 9999, "平均延迟上限")
-	flag.IntVar(&minDelay, "tll", 0, "平均延迟下限")
-	flag.Float64Var(&task.MinSpeed, "sl", 0, "下载速度下限")
+	
+	flag.IntVar(&maxDelay, "tl", 300, "平均延迟上限")
+	flag.IntVar(&minDelay, "tll", 10, "平均延迟下限")
+	flag.Float64Var(&task.MinSpeed, "sl", 1, "下载速度下限")
 	flag.IntVar(&utils.PrintNum, "p", 10, "显示结果数量")
 	flag.StringVar(&task.IPFile, "f", "ip.txt", "IP段数据文件")
 	flag.StringVar(&task.IPText, "ip", "", "指定IP段数据")
 	flag.StringVar(&utils.Output, "o", "result.csv", "输出结果文件")
-
+	
 	flag.BoolVar(&task.Disable, "dd", false, "禁用下载测速")
 	flag.BoolVar(&task.TestAll, "allip", false, "测速全部 IP")
-
+	
 	flag.BoolVar(&printVersion, "v", false, "打印程序版本")
 	flag.Usage = func() { fmt.Print(help) }
 	flag.Parse()
-
+	
 	if task.MinSpeed > 0 && time.Duration(maxDelay)*time.Millisecond == utils.InputMaxDelay {
 		fmt.Println("[小提示] 在使用 [-sl] 参数时，建议搭配 [-tl] 参数，以避免因凑不够 [-dn] 数量而一直测速...")
 	}
@@ -107,7 +108,7 @@ https://github.com/XIU2/CloudflareSpeedTest
 	utils.InputMinDelay = time.Duration(minDelay) * time.Millisecond
 	task.Timeout = time.Duration(downloadTime) * time.Second
 	task.HttpingCFColomap = task.MapColoMap()
-
+	
 	if printVersion {
 		println(version)
 		fmt.Println("检查版本更新中...")
@@ -134,12 +135,12 @@ func main() {
 		} else {
 			fmt.Println("间隔不符合规范,请重新设置")
 		}
-
+		
 	} else {
 		Run()
 		endPrint()
 	}
-
+	
 }
 
 func endPrint() {
@@ -172,17 +173,16 @@ func checkUpdate() {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-
+			
 		}
 	}(res.Body)
 	if string(body) != version {
 		versionNew = string(body)
 	}
 }
-
 func Run() {
 	task.InitRandSeed() // 置随机数种子
-
+	
 	fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
 	fmt.Println("来自v50-one的修改版，感谢原作者")
 	// 开始延迟测速
@@ -191,12 +191,17 @@ func Run() {
 	speedData := task.TestDownloadSpeed(pingData)
 	utils.ExportCsv(speedData) // 输出文件
 	speedData.Print()          // 打印结果
-
+	
 	if versionNew != "" {
 		fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
 	}
+	
 	cfip.C.UpdateDomain(task.BestIp, task.SpeedIp) // 更新域名解析记录
-
+	err := cfip.PushTgBot(_const.TGPUSH)
+	if err != nil {
+		return
+	} // 推送到tg机器人
+	
 }
 
 // 定时函数

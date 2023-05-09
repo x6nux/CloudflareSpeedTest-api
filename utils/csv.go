@@ -1,6 +1,7 @@
 package utils
 
 import (
+	_const "edulx/CloudflareSpeedTest-api/const"
 	"encoding/csv"
 	"fmt"
 	"log"
@@ -160,8 +161,10 @@ func (s DownloadSpeedSet) Print() {
 		}
 	}
 	fmt.Printf(headFormat, "IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)")
+	_const.TGPUSH += fmt.Sprintf("\nIP 地址 已发送 已接收 丢包率 平均延迟 下载速度 (MB/s)\n")
 	for i := 0; i < PrintNum; i++ {
 		fmt.Printf(dataFormat, dateString[i][0], dateString[i][1], dateString[i][2], dateString[i][3], dateString[i][4], dateString[i][5])
+		_const.TGPUSH += fmt.Sprintf("%s %s %s %s %s %s\n", dateString[i][0], dateString[i][1], dateString[i][2], dateString[i][3], dateString[i][4], dateString[i][5])
 	}
 	if !noOutput() {
 		fmt.Printf("\n完整测速结果已写入 %v 文件，可使用记事本/表格软件查看。\n", Output)

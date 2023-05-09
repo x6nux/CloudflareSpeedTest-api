@@ -2,6 +2,7 @@ package cfip
 
 import (
 	"crypto/tls"
+	_const "edulx/CloudflareSpeedTest-api/const"
 	"edulx/CloudflareSpeedTest-api/task"
 	"encoding/json"
 	"errors"
@@ -17,13 +18,18 @@ import (
 )
 
 type CloudflareAPI struct {
-	Clock       int      `yaml:"clock"`
-	ClockSwitch bool     `yaml:"clock_switch"`
-	Email       string   `yaml:"email"`
-	ApiKeys     string   `yaml:"api_key"`
-	ZoneId      string   `yaml:"zone_id"`
-	Domain      string   `yaml:"domain"`
-	SubDomain   []string `yaml:"subdomains"`
+	Clock       int  `yaml:"clock"`
+	ClockSwitch bool `yaml:"clock_switch"`
+	TGbot       struct {
+		TGbotToken  string `yaml:"tgbot_token"`
+		TGbotChatID string `yaml:"tgbot_chat_id"`
+		Switch      bool   `yaml:"switch"`
+	} `yaml:"tgbot"`
+	Email     string   `yaml:"email"`
+	ApiKeys   string   `yaml:"api_key"`
+	ZoneId    string   `yaml:"zone_id"`
+	Domain    string   `yaml:"domain"`
+	SubDomain []string `yaml:"subdomains"`
 }
 
 var C CloudflareAPI
@@ -41,6 +47,7 @@ func (c *CloudflareAPI) ReadYaml() error {
 	}
 	if C.Email == "" || C.ApiKeys == "" || C.ZoneId == "" || C.Domain == "" || len(C.SubDomain) == 0 {
 		fmt.Println("请检查config.yaml配置文件是否正确")
+		_const.TGPUSH += "请检查config.yaml配置文件是否正确\n"
 		return errors.New("请检查config.yaml配置文件是否正确")
 	}
 	return nil
@@ -73,7 +80,7 @@ func (c *CloudflareAPI) GetDomain(ip net.IPAddr) (CFR, error) {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-
+		
 		}
 	}(res.Body)
 	body, err := io.ReadAll(res.Body)
@@ -82,12 +89,11 @@ func (c *CloudflareAPI) GetDomain(ip net.IPAddr) (CFR, error) {
 	}
 	var s CFR
 	err = json.Unmarshal(body, &s)
-	if s.Success == false {
+	if err != nil {
 		return CFR{}, err
 	}
-	if err != nil {
-		fmt.Println(err.Error())
-		return CFR{}, err
+	if s.Success == false {
+		return CFR{}, errors.New("域名信息获取失败")
 	}
 	return s, nil
 }
@@ -125,6 +131,7 @@ func (c *CloudflareAPI) SortIp(ip []net.IPAddr, speed []float64) []net.IPAddr {
 func (c *CloudflareAPI) UpdateDomain(ip []net.IPAddr, speed []float64) {
 	if len(ip) < len(c.SubDomain) {
 		fmt.Println("ip地址和域名数量不匹配")
+		_const.TGPUSH += "ip地址和域名数量不匹配\n"
 		return
 	}
 	err := c.ReadYaml()
@@ -135,6 +142,7 @@ func (c *CloudflareAPI) UpdateDomain(ip []net.IPAddr, speed []float64) {
 	for i := 0; i <= len(ip); i++ {
 		if i == len(ip) {
 			fmt.Println("域名信息获取失败,结束重试")
+			_const.TGPUSH += "域名信息获取失败,结束重试\n"
 			return
 		}
 		s, err = c.GetDomainUuid(ip[i])
@@ -143,7 +151,7 @@ func (c *CloudflareAPI) UpdateDomain(ip []net.IPAddr, speed []float64) {
 		}
 		fmt.Println("域名信息第" + strconv.Itoa(i+1) + "次获取失败,正在进行下一次重试")
 	}
-
+	
 	ip = c.SortIp(ip, speed)
 	for i, v := range c.SubDomain {
 		if i >= len(ip) {
@@ -153,25 +161,31 @@ func (c *CloudflareAPI) UpdateDomain(ip []net.IPAddr, speed []float64) {
 			fmt.Println("域名:" + v + "." + c.Domain + "不存在")
 			for k := 0; k <= len(ip); k++ {
 				if k == len(ip) {
-					fmt.Println("域名" + v + "." + c.Domain + "创建失败 IP:" + ip[i].String())
+					fmt.Println("域名" + v + "." + c.Domain + "创建失败 IP:" + ip[k].String())
+					_const.TGPUSH += "域名" + v + "." + c.Domain + "创建失败 IP:" + ip[k].String() + "\n"
+					break
 				}
 				err := c.CreateDomain(v, ip[i], ip[k])
 				if err == nil {
 					fmt.Println("域名" + v + "." + c.Domain + "创建成功 IP:" + ip[k].String())
+					_const.TGPUSH += "域名" + v + "." + c.Domain + "创建成功 IP:" + ip[k].String() + "\n"
 					break
 				}
 				fmt.Println("域名" + v + "." + c.Domain + "第" + strconv.Itoa(k+1) + "次创建失败,正在进行下一次重试")
 			}
-
+			
 			continue
 		}
-		for t := 0; t <= len(ip); i++ {
+		for t := 0; t <= len(ip); t++ {
 			if t == len(ip) {
 				fmt.Println("域名" + v + "." + c.Domain + "更新失败 IP:" + ip[i].String())
+				_const.TGPUSH += "域名" + v + "." + c.Domain + "更新失败 IP:" + ip[i].String() + "\n"
+				break
 			}
 			err := c.PUTDomains(ip[i], v, ip[t], s[v])
 			if err == nil {
 				fmt.Println("域名" + v + "." + c.Domain + "更新成功 IP:" + ip[i].String())
+				_const.TGPUSH += "域名" + v + "." + c.Domain + "更新成功 IP:" + ip[i].String() + "\n"
 				break
 			}
 			fmt.Println("域名" + v + "." + c.Domain + "第" + strconv.Itoa(t+1) + "次更新失败,正在进行下一次重试")
@@ -194,31 +208,32 @@ func (c *CloudflareAPI) PUTDomains(ip net.IPAddr, subdomain string, ips net.IPAd
 	}
 	req, err := http.NewRequest(method, url, payload)
 	if err != nil {
-		fmt.Println(err.Error())
+		return err
 	}
 	req.Header.Add("X-Auth-Email", c.Email)
 	req.Header.Add("X-Auth-Key", c.ApiKeys)
 	req.Header.Add("Content-Type", "application/json")
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err.Error())
+		return err
 	}
 	body, err := io.ReadAll(res.Body)
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-
+			fmt.Println(err.Error())
 		}
 	}(res.Body)
 	if err != nil {
-		fmt.Println(err.Error())
+		return err
 	}
 	var s map[string]interface{}
 	err = json.Unmarshal(body, &s)
 	if err != nil {
-		fmt.Println(err.Error())
+		return err
 	}
 	if s["success"] == false {
+		
 		return errors.New("更新失败")
 	} else {
 		return nil
@@ -258,7 +273,7 @@ func (c *CloudflareAPI) CreateDomain(subdomain string, ip net.IPAddr, ips net.IP
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-
+			fmt.Println(err.Error())
 		}
 	}(res.Body)
 	if err != nil {
@@ -274,5 +289,5 @@ func (c *CloudflareAPI) CreateDomain(subdomain string, ip net.IPAddr, ips net.IP
 	} else {
 		return nil
 	}
-
+	
 }
