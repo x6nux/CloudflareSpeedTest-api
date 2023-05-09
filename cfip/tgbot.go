@@ -5,12 +5,12 @@ import (
 )
 
 func PushTgBot(c string) error {
-	bot, err := tgbotapi.NewBotAPI("5835666296:AAGed5EX2kRgGXjtMHx2RkOmtnjjETtZn1c")
+	bot, err := tgbotapi.NewBotAPI("1")
 	if err != nil {
 		return err
 	}
 	bot.Debug = false
-	msg := tgbotapi.NewMessage(5740566746, c)
+	msg := tgbotapi.NewMessage(1, c)
 	_, err = bot.Send(msg)
 	if err != nil {
 		return err
