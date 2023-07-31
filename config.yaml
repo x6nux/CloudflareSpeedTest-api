@@ -10,13 +10,13 @@
     tgbot_chat_id : 123456789
     #是否开启Telegram Bot通知 true开启 false关闭
     switch : false
- email : 2508339002@qq.com
+ email : 123456@qq.com
  #Cloudflare全局API Key
  api_key : d97a4c2aacc8f78e7cfd7ea5df2dfb346a177
  #Cloudflare域名ID
  zone_id : 9cc56627722e4ac1254b6e659249c658
  #域名
- domain: 030514.xyz
+ domain: 123456.xyz
  #子域名
  subdomains:
    - cf1
