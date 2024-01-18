@@ -1,4 +1,10 @@
 # v50-one/CloudflareSpeedTest-api
+## Sponsor
+We are proudly sponsored by DartNode.  DartNode supports our project by providing [mention the specific support they offer, such as infrastructure, services, etc.].
+
+[! [DartNode Logo](https://app.dartnode.com/assets/dash/images/brand/favicon.png)](https://app.dartnode.com)
+
+Please consider supporting DartNode as they are not only supporting us but also contributing to the open-source community. 
 
 ## 本项目是基于XIU2/CloudflareSpeedTest 改版而来
 ## 本改版只是在测速的基础上添加了将优选出来的IP通过调用Cloudflare的api来实现将域名解析到对应的优选ip
