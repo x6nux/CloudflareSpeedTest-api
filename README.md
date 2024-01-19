@@ -1,6 +1,7 @@
 # v50-one/CloudflareSpeedTest-api
 ## Sponsor
 We are proudly sponsored by DartNode.  DartNode supports our project by providing [mention the specific support they offer, such as infrastructure, services, etc.].
+websize:https://dartnode.com
 
 [![DartNode Logo](https://app.dartnode.com/assets/dash/images/brand/favicon.png)](https://dartnode.com)
 
